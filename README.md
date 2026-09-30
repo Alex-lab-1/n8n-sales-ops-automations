@@ -15,7 +15,7 @@ Both are built for the same context as my [AI Knowledge Assistant for manufactur
 
 ## WF1 – RFQ Intake
 
-![WF1 flow](screenshots/01_wf1_flow.png)
+![WF1 flow](Screenshot%20github/01_wf1_flow.png.png)
 
 **Flow:** Form → OpenAI (structured extraction, JSON mode) → data preparation → HubSpot contact upsert → *complete?* → deal **or** task.
 
@@ -26,15 +26,15 @@ Both are built for the same context as my [AI Knowledge Assistant for manufactur
 - Incomplete requests become a high-priority task with a draft reply that asks **only** for the missing information.
 - Contacts are upserted by email, so a returning customer does not create a duplicate.
 
-![AI extraction](screenshots/02_wf1_ai_extraction.png)
+![AI extraction](Screenshot%20github/02_wf1_ai_extraction.png.png)
 
 | Deal created | Task with draft reply |
 |---|---|
-| ![Deal](screenshots/03_wf1_hubspot_deal.png) | ![Task](screenshots/04_wf1_hubspot_task.png) |
+| ![Deal](Screenshot%20github/03_wf1_hubspot_deal.png.png) | ![Task](Screenshot%20github/04_wf1_hubspot_task.png.png) |
 
 ## WF2 – Lead Research & Outreach
 
-![WF2 flow](screenshots/05_wf2_flow.png)
+![WF2 flow](Screenshot%20github/05_wf2_flow.png.png)
 
 **Flow:** Lead list → fetch website → clean HTML to text → OpenAI (fit score, reasoning, pitch angle, email) → *fit ≥ 6?* → HubSpot company + task **or** discard.
 
