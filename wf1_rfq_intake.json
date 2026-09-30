@@ -1,0 +1,242 @@
+{
+  "name": "WF1 - RFQ Intake (Brixia Steel)",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Richiesta preventivo - Brixia Steel Components",
+        "formDescription": "Descrivi il pezzo che ti serve: ti rispondiamo entro 48 ore.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nome e cognome",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Azienda",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Descrizione della richiesta",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "705172c1-dea7-4aba-9d2a-e018e63cb502",
+      "name": "Form RFQ",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        -48
+      ],
+      "webhookId": "8ee1375c-81b7-46c8-9649-4e8cd4d23f7f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You extract data from a request for quotation (RFQ) sent to Brixia Steel Components, a sheet metal fabricator. Return ONLY a JSON object with these keys: tipo_pezzo, quantita, materiale, spessore, finitura, formato_disegno, scadenza, campi_mancanti, riepilogo, bozza_risposta. Use null for any value not stated. A complete RFQ needs four items: quantita, materiale, formato_disegno, scadenza. campi_mancanti is an array with the Italian names of the missing required items, chosen from: quantita, materiale, formato del disegno, scadenza di consegna. Use an empty array if nothing is missing. Accepted drawing formats: DWG, DXF, STEP (PDF is accepted but slows quoting). riepilogo: one Italian sentence summarizing the request. bozza_risposta: a short, polite reply email in Italian, signed Ufficio Commerciale Brixia Steel Components. If items are missing, ask only for those. If complete, confirm that a quote will follow within 48 hours. Never invent data.' }, { role: 'user', content: 'Azienda: ' + $json['Azienda'] + '\\nRichiesta: ' + $json['Descrizione della richiesta'] } ] }) }}",
+        "options": {}
+      },
+      "id": "ec0ac7b9-1363-4379-adbf-396427e66678",
+      "name": "OpenAI Estrai",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -736,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const form = $('Form RFQ').first().json;\nlet ai = {};\ntry {\n  ai = JSON.parse($json.choices[0].message.content);\n} catch (e) {\n  ai = { campi_mancanti: ['errore lettura AI'], riepilogo: 'Errore di lettura della risposta AI', bozza_risposta: '' };\n}\nconst missing = Array.isArray(ai.campi_mancanti) ? ai.campi_mancanti : [];\nconst parts = String(form['Nome e cognome'] || '').trim().split(/\\s+/);\nreturn [{ json: {\n  ...ai,\n  nome: parts[0] || '',\n  cognome: parts.slice(1).join(' '),\n  email: form['Email'],\n  azienda: form['Azienda'],\n  descrizione: form['Descrizione della richiesta'],\n  campi_mancanti: missing,\n  completa: missing.length === 0\n} }];"
+      },
+      "id": "7872cfca-9648-47d9-9898-1177053884b8",
+      "name": "Prepara Dati",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: [ { idProperty: 'email', id: $json.email, properties: { email: $json.email, firstname: $json.nome, lastname: $json.cognome, company: $json.azienda } } ] }) }}",
+        "options": {}
+      },
+      "id": "cb9e2b23-4719-445a-847f-8783ad9239d1",
+      "name": "HubSpot Contatto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -304,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c0ffee00-0000-4000-8000-000000000001",
+              "leftValue": "={{ $('Prepara Dati').first().json.completa }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f20a91d5-c57e-438c-be91-26f3dfee0c1a",
+      "name": "Richiesta Completa",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { dealname: 'RFQ - ' + $('Prepara Dati').first().json.azienda + ' - ' + ($('Prepara Dati').first().json.tipo_pezzo || 'richiesta'), pipeline: 'default', dealstage: 'appointmentscheduled', description: $('Prepara Dati').first().json.riepilogo + '\\n\\nBozza risposta:\\n' + $('Prepara Dati').first().json.bozza_risposta }, associations: [ { to: { id: $json.results[0].id }, types: [ { associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 3 } ] } ] }) }}",
+        "options": {}
+      },
+      "id": "5a79152c-c50e-45cd-9186-7973d02accd6",
+      "name": "HubSpot Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        144,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { hs_timestamp: new Date(Date.now() + 86400000).toISOString(), hs_task_subject: 'RFQ incompleta - ' + $('Prepara Dati').first().json.azienda + ': chiedere ' + $('Prepara Dati').first().json.campi_mancanti.join(', '), hs_task_body: $('Prepara Dati').first().json.bozza_risposta, hs_task_status: 'NOT_STARTED', hs_task_priority: 'HIGH', hs_task_type: 'EMAIL' }, associations: [ { to: { id: $json.results[0].id }, types: [ { associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 204 } ] } ] }) }}",
+        "options": {}
+      },
+      "id": "af0dfd3b-48bb-4e97-9c9c-00947fba50bf",
+      "name": "HubSpot Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        144,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Form RFQ": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Estrai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Estrai": {
+      "main": [
+        [
+          {
+            "node": "Prepara Dati",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Dati": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Contatto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Contatto": {
+      "main": [
+        [
+          {
+            "node": "Richiesta Completa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Richiesta Completa": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Deal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}

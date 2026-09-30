@@ -1,0 +1,286 @@
+{
+  "name": "WF2 - Lead Research & Outreach (RAG Assistant)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "daca4ae9-28b1-4393-b5e5-71ef0f8f4224",
+      "name": "Avvia",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replace with real companies: name + homepage URL\nreturn [\n  { json: { azienda: 'COMPANY 1', sito: 'https://www.example-company-1.it' } },\n  { json: { azienda: 'COMPANY 2', sito: 'https://www.example-company-2.it' } },\n  { json: { azienda: 'COMPANY 3', sito: 'https://www.example-company-3.it' } }\n];"
+      },
+      "id": "db5957c0-3adf-4b48-9d5b-3a3e4c23ef1a",
+      "name": "Lista Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2512,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.sito }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "9dd9b45e-94d1-42b2-9e53-748340cca279",
+      "name": "Leggi Sito",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2288,
+        400
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $('Lista Lead').all();\nreturn $input.all().map((item, i) => {\n  const html = String(item.json.data || '');\n  const text = html\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .slice(0, 6000);\n  return { json: { ...leads[i].json, testo_sito: text, sito_letto: text.length > 200 }, pairedItem: i };\n});"
+      },
+      "id": "7a00a04a-c5d0-4c30-a28b-9f92994cbb51",
+      "name": "Pulisci Testo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2064,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.3, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a B2B sales researcher. The seller is Alex Bof, who built an AI Knowledge Assistant for manufacturing SMEs: staff ask questions in natural language and get answers in seconds from the company own catalogs, contracts, FAQs and ISO 9001 quality procedures, with cited sources. It comes with an ROI calculator. The ideal customer is an Italian manufacturing SME with many technical documents: catalogs, product variants, certifications, quality procedures, B2B customers asking technical questions. Using ONLY the website text provided, return ONLY a JSON object with keys: cosa_fa, settore, fit_score, motivazione_fit, angolo_pitch, oggetto_email, email. cosa_fa: one Italian sentence on what the company does. fit_score: integer 1-10. motivazione_fit: one or two Italian sentences. angolo_pitch: the single most relevant pain point for this company. oggetto_email: short Italian subject line, no clickbait. email: Italian cold email under 120 words, formal (Lei), written in first person singular by Alex (io, never noi). The first sentence must be about them and cite one concrete detail from their website (a product, process, certification or market). Then one concrete benefit tied to angolo_pitch. End with a soft request for a 15 minute call. Sign as Alex Bof. Ban generic phrases such as soluzione innovativa or rivoluzionaria. Always fill cosa_fa, settore, fit_score and motivazione_fit, even when the fit is low. Fill oggetto_email and email ONLY if fit_score is 6 or higher, otherwise leave them empty. Never invent facts about the company, never claim existing customers or results. If the website text is empty or unusable, set fit_score to 0, cosa_fa to sito non leggibile, motivazione_fit to sito non leggibile.' }, { role: 'user', content: 'Azienda: ' + $json.azienda + '\\nSito: ' + $json.sito + '\\nTesto sito: ' + ($json.testo_sito || '') } ] }) }}",
+        "options": {}
+      },
+      "id": "3a3023a2-8d23-4d2d-b900-396eed3ad79a",
+      "name": "OpenAI Qualifica",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $('Pulisci Testo').all();\nreturn $input.all().map((item, i) => {\n  let ai = {};\n  try {\n    ai = JSON.parse(item.json.choices[0].message.content);\n  } catch (e) {\n    ai = { fit_score: 0, cosa_fa: 'errore lettura AI', email: '' };\n  }\n  const lead = leads[i].json;\n  const domain = String(lead.sito || '').replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0];\n  return { json: {\n    azienda: lead.azienda,\n    sito: lead.sito,\n    dominio: domain,\n    sito_letto: lead.sito_letto,\n    cosa_fa: ai.cosa_fa || '',\n    settore: ai.settore || '',\n    fit_score: Number(ai.fit_score) || 0,\n    motivazione_fit: ai.motivazione_fit || '',\n    angolo_pitch: ai.angolo_pitch || '',\n    oggetto_email: ai.oggetto_email || '',\n    email: ai.email || ''\n  }, pairedItem: i };\n});"
+      },
+      "id": "c17f64cd-0985-41b1-b422-2beb100fd94f",
+      "name": "Prepara Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1632,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c0ffee00-0000-4000-8000-000000000002",
+              "leftValue": "={{ $json.fit_score }}",
+              "rightValue": 6,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8c14a041-6190-408e-b184-a643e037f937",
+      "name": "Fit >= 6",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1408,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/companies",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { name: $json.azienda, domain: $json.dominio, description: $json.cosa_fa + '\\n\\nFit score: ' + $json.fit_score + '/10. ' + $json.motivazione_fit + '\\nAngolo di pitch: ' + $json.angolo_pitch } }) }}",
+        "options": {}
+      },
+      "id": "9ff1e979-2a61-427e-b1e9-010eccfd3024",
+      "name": "HubSpot Azienda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1184,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { hs_timestamp: new Date(Date.now() + 86400000).toISOString(), hs_task_subject: 'Outreach ' + $('Prepara Output').item.json.azienda + ' - fit ' + $('Prepara Output').item.json.fit_score + '/10', hs_task_body: 'Oggetto: ' + $('Prepara Output').item.json.oggetto_email + '\\n\\n' + $('Prepara Output').item.json.email + '\\n\\n---\\nPerche: ' + $('Prepara Output').item.json.motivazione_fit, hs_task_status: 'NOT_STARTED', hs_task_priority: $('Prepara Output').item.json.fit_score >= 8 ? 'HIGH' : 'MEDIUM', hs_task_type: 'EMAIL' }, associations: [ { to: { id: $json.id }, types: [ { associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 192 } ] } ] }) }}",
+        "options": {}
+      },
+      "id": "a29591b9-492a-4fe2-9c4b-d20bea9a94b6",
+      "name": "HubSpot Task Outreach",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "2b9c4600-955e-4b8b-b4ae-93daf773ee50",
+      "name": "Scartati (fit basso)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1184,
+        512
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Avvia": {
+      "main": [
+        [
+          {
+            "node": "Lista Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista Lead": {
+      "main": [
+        [
+          {
+            "node": "Leggi Sito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leggi Sito": {
+      "main": [
+        [
+          {
+            "node": "Pulisci Testo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pulisci Testo": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Qualifica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Qualifica": {
+      "main": [
+        [
+          {
+            "node": "Prepara Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Output": {
+      "main": [
+        [
+          {
+            "node": "Fit >= 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fit >= 6": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Azienda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scartati (fit basso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Azienda": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Task Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
