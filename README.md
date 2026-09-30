@@ -1,4 +1,3 @@
-[Readme1.md](https://github.com/user-attachments/files/32852409/Readme1.md)
 # n8n Sales Ops Automations
 
 Two n8n workflows that take repetitive work off a B2B sales team and keep the CRM (HubSpot) up to date automatically. An LLM handles the unstructured part (reading free text, judging fit, drafting emails); plain workflow logic handles routing and CRM writes.
